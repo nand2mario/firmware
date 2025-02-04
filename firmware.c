@@ -215,10 +215,12 @@ int file_len;		// number of files on this page
 
 // starting from `start`, load `len` file names into file_names, 
 // file_dir. 
-// *count is set to number of all valid entries and `file_len` is
+// `*count` is set to number of all valid entries and `file_len` is
 // set to valid entries on this page.
+// `filter` when non-null is a function that takes a file name and returns true if the file is
+// to be included in the list.
 // return: 0 if successful
-int load_dir(char *dir, int start, int len, int *count) {
+int load_dir(char *dir, int start, int len, int *count, bool (*filter)(char *)) {
     DEBUG("load_dir: %s, start=%d, len=%d\n", dir, start, len);
     int cnt = 0;
     DIR d;
@@ -257,6 +259,8 @@ int load_dir(char *dir, int start, int len, int *count) {
         if ((fno.fattrib & AM_HID) || (fno.fattrib & AM_SYS))
              // skip hidden and system files
             continue;
+        if (filter && !filter(fno.fname))
+            continue;
         if (cnt >= start && file_len < len) {
             strncpy(file_names[file_len], fno.fname, 256);
             file_dir[file_len] = fno.fattrib & AM_DIR;
@@ -281,7 +285,7 @@ int menu_loadrom(int *choice) {
     pwd[1] = '\0';
     while (1) {
         clear();
-        int r = load_dir(pwd, page*PAGESIZE, PAGESIZE, &total);
+        int r = load_dir(pwd, page*PAGESIZE, PAGESIZE, &total, NULL);
         if (r == 0) {
             pages = (total+PAGESIZE-1) / PAGESIZE;
             status("Page ");
@@ -535,9 +539,20 @@ void load_core(char *fname, int verify) {
         message("Core ready. Pls reboot", 1);
 }
 
+// return true for core gateware files (.bin, except firmware*.bin)
+bool filter_cores(char *fname) {
+    char *p = strcasestr(fname, ".bin");
+    if (p == NULL)
+        return false;
+    p = strcasestr(fname, "firmware");
+    if (p != NULL)
+        return false;
+    return true;
+}
+
 void menu_select_core(int verify) {
     int total, choice = 0, draw=1;
-    int r = load_dir("/cores", 0, PAGESIZE, &total);
+    int r = load_dir("/cores", 0, PAGESIZE, &total, filter_cores);
     if (r != 0) {
         clear();
         message("Need .bin in /cores", 1);
